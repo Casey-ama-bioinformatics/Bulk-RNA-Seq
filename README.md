@@ -1,4 +1,4 @@
-# Bulk-RNA-Seq
-## Bulk RNA Sequencing Workflow
-# What this project is (Book 50- 10)
+# Bulk-RNA-Seq Workflow 
+## Documentation for Book 50 - 10 
+# What this project is about
 Mouse 
