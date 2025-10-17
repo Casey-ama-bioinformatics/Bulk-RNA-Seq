@@ -53,5 +53,27 @@ for (f in file_list) {
 ```
 The FastQC documentation provides a detailed explanation for each sequencing metric. (https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/)
 
-## 3. Trimming of adapters
-The samples were sequenced using the Illumina 
+## 3. Trimming with Trim Galore
+Samples were sequenced on the NovaSeq x Plus with Illumina Stranded mRNA Library Kit. I used Trim Galore to trim the Nextera transposase adapters (Read 1 5′ TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG ; Read 2 5′ GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG). There are other trimming tools such as `Trimmomatic` and `Skewer` but I found that `Trim Galore` worked best in trimming paired end adapter sequences. I pulled `Trim Galore v0.6.7` in the `Docker` Container and ran the following code in Command Prompt.
+### Command
+```Windows
+# Set the working directory to your fastq files
+setwd(<path to dir>)
+
+#Pulling Trim Galore in Docker Container (use most updated tag version)
+docker pull quay.io/biocontainers/trim-galore:<tag>
+
+#Running Trim Galore
+docker run --rm -v
+C:<working directory>:/data quay.io/biocontainers/trim-galore:<tag>
+--paired
+--nextera
+--output_dir /data/<output dir for fastq files>
+--fastqc_args "--outdir /data/<output dir for fastqc files>" /data/<sample>_R1_001.fastq /data/<sample>_R2_001.fastq
+
+```
+
+
+
+
+
