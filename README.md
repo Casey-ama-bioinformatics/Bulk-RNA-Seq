@@ -72,6 +72,7 @@ C:<working directory>:/data quay.io/biocontainers/trim-galore:<tag>
 --fastqc_args "--outdir /data/<output dir for fastqc files>" /data/<sample>_R1_001.fastq /data/<sample>_R2_001.fastq
 
 ```
+Refer to (https://github.com/FelixKrueger/TrimGalore/blob/master/Docs/Trim_Galore_User_Guide.md) for various options. 
 
 
 
