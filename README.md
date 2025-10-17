@@ -8,4 +8,5 @@ This page documents the basic workflow for bulk RNA sequencing data analysis. Th
 The fastq files are uncompressed using `7zip` and organized into `Fastqfiles` folder. 
 
 ## 2. Running FastQC on fastq files
-Running FastQC analysis prior to trimming allows us to visualise sequencing metrics
+Running FastQC analysis prior to trimming allows us to visualise sequencing metrics. This sets a baseline for post-processing metrics to ensure adaquate adapter trimming. Additional trimming might be required depending on sequencing quality.  
+
