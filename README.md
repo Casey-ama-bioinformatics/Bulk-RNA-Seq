@@ -215,7 +215,7 @@ pause
 Refer to https://github.com/alexdobin/STAR/blob/master/doc/STARmanual.pdf for more details. 
 
 ### FeatureCounts
-FeatureCounts 
+FeatureCounts is a tool to quantify the number of reads aligned to genes. 
 ## 4b. Salmon
 
 
