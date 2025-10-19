@@ -1,7 +1,7 @@
 # Bulk RNA Seq Workflow  
 Casey Ho  
 ## Introduction
-This page documents the basic workflow for bulk RNA sequencing data analysis at Elicieri Lab, UC San Diego, School of Medicine. This is written in parallel with data processing for Book 50-10 Bulk RNA-Seq Data using Windows Command Prompt (Windows 11 Home License) with Hyper-v configuration and RStudio. 
+This page documents the basic workflow for bulk RNA sequencing data analysis at Elicieri Lab, UC San Diego, School of Medicine. This is written in parallel with data processing for Book 50-10 Bulk RNA-Seq Data using Windows 11 Home with Hyper-V, `Docker Desktop`, and `RStudio`.
 ## Directory
 
 ## 1. Fastq files 
@@ -73,7 +73,22 @@ C:<working directory>:/data quay.io/biocontainers/trim-galore:<tag>
 
 ```
 Refer to (https://github.com/FelixKrueger/TrimGalore/blob/master/Docs/Trim_Galore_User_Guide.md) for various options. 
+### Output
+```Windows
 
+```
+I made sure that trimming of the adapters were complete by checking the 'FastQC' html reports before proceeding to sequence alignment. 
+
+## 4a. STAR alignment + FeatureCounts
+STAR (Spliced Transcripts Alignment to a Reference) is tool which uses genome as a reference. This tool is used for genome level and splicing analysis. Before aligning the `fastq` files to the genome reference, a `star_index` is generated using your desired genome (.fa) and annotation (.gtf) references. For this analysis, I used the mouse primary assembly genome (GRCm38.primary_assembly.genome.fa) and mouse basic gene annotation (gencode.vM38.basic.annotation.gtf). These files can be downloaded from https://www.gencodegenes.org/mouse/. 
+
+### Command
+```Windows
+#Pulling STAR in Docker Container (use most updated tag version)
+docker pull quay.io/biocontainers/trim-galore:<tag>
+
+```
+## 4b. Salmon
 
 
 
