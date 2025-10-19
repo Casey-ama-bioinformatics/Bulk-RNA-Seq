@@ -58,21 +58,21 @@ Samples were sequenced on the NovaSeq x Plus with Illumina Stranded mRNA Library
 ### Command
 ```Windows
 # Set the working directory to your fastq files
-setwd(<path to dir>)
+cd C:<path to dir>
 
 #Pulling Trim Galore in Docker Container (use most updated tag version)
-docker pull quay.io/biocontainers/trim-galore:<tag>
+docker pull quay.io/biocontainers/trim-galore:<version--tag>
 
 #Running Trim Galore
 docker run --rm -v
-C:<working directory>:/data quay.io/biocontainers/trim-galore:<tag>
+C:<working directory>:/data quay.io/biocontainers/trim-galore:<version--tag>
 --paired
 --nextera
 --output_dir /data/<output dir for fastq files>
 --fastqc_args "--outdir /data/<output dir for fastqc files>" /data/<sample>_R1_001.fastq /data/<sample>_R2_001.fastq
 
 ```
-Refer to (https://github.com/FelixKrueger/TrimGalore/blob/master/Docs/Trim_Galore_User_Guide.md) for various options. 
+Refer to https://github.com/FelixKrueger/TrimGalore/blob/master/Docs/Trim_Galore_User_Guide.md for more mode options. 
 ### Output
 ```Windows
 
@@ -80,14 +80,142 @@ Refer to (https://github.com/FelixKrueger/TrimGalore/blob/master/Docs/Trim_Galor
 I made sure that trimming of the adapters were complete by checking the 'FastQC' html reports before proceeding to sequence alignment. 
 
 ## 4a. STAR alignment + FeatureCounts
-STAR (Spliced Transcripts Alignment to a Reference) is tool which uses genome as a reference. This tool is used for genome level and splicing analysis. Before aligning the `fastq` files to the genome reference, a `star_index` is generated using your desired genome (.fa) and annotation (.gtf) references. For this analysis, I used the mouse primary assembly genome (GRCm38.primary_assembly.genome.fa) and mouse basic gene annotation (gencode.vM38.basic.annotation.gtf). These files can be downloaded from https://www.gencodegenes.org/mouse/. 
+### STAR
+STAR (Spliced Transcripts Alignment to a Reference) is tool which uses genome as a reference. This tool is used for genome level and splicing analysis. Before aligning the `fastq` files to the genome reference, a `star_index` is generated using your desired genome (.fa) and annotation (.gtf) references. For this analysis, I used the mouse primary assembly genome (GRCm38.primary_assembly.genome.fa) and mouse basic gene annotation (gencode.vM38.basic.annotation.gtf). These files can be downloaded from https://www.gencodegenes.org/mouse/. I used `star 2.7.11b` for index generation and running alignment. 
 
 ### Command
 ```Windows
-#Pulling STAR in Docker Container (use most updated tag version)
-docker pull quay.io/biocontainers/trim-galore:<tag>
+#Set working directory to your reference files
+cd C:<path to dir>
 
+#Pulling STAR in Docker Container (use most updated tag version)
+docker pull quay.io/biocontainers/star:<version--tag>
+
+#Generating star_index
+docker run --rm ^
+  -v C:/<working directory>:/data ^
+  quay.io/biocontainers/star:<version--tag> ^
+  STAR --runMode genomeGenerate ^
+       --genomeDir /data/star_index ^
+       --genomeFastaFiles /data/GRCm38.primary_assembly.genome.fa ^ 
+       --sjdbGTFfile /data/gencode.vM38.basic.annotation.gtf ^
+       --genomeSAindexNbases 12 ^
+       --runThreadN 8
+
+#Running star alignment for all paired samples and moving all BAM files to a different folder
+@echo off
+setlocal enabledelayedexpansion
+
+:: ================================
+:: Define directories
+:: ================================
+set fastqDir=C:<path to fastq files>
+set outputDir=C:<path to output dir>
+set indexDir=C:<path to star_index>
+set bamDir=%outputDir%\BAMfiles
+set logFile=%outputDir%\STAR_alignment_log.txt
+
+
+:: ================================
+:: Create output folders if missing
+:: ================================
+if not exist "%outputDir%" mkdir "%outputDir%"
+if not exist "%bamDir%" mkdir "%bamDir%"
+
+:: ================================
+:: Initialize log file
+:: ================================
+echo ======================================== > "%logFile%"
+echo STAR Alignment Log - %date% %time% >> "%logFile%"
+echo Output directory: %outputDir% >> "%logFile%"
+echo ======================================== >> "%logFile%"
+echo. >> "%logFile%"
+
+:: ================================
+:: Loop through all R1 FASTQ files
+:: ================================
+for %%F in ("%fastqDir%\*_R1_001_val_1.fq") do (
+    set "r1=%%~nxF"
+    set "base=%%~nF"
+    set "base=!base:_R1_001_val_1=!"
+    set "r2=!base!_R2_001_val_2.fq"
+    set "r2path=%fastqDir%\!r2!"
+
+
+    echo.
+    echo ========================================
+    echo Checking sample: !base!
+    echo R1: !r1!
+    echo R2: !r2!
+    echo ========================================
+
+
+    echo [%date% %time%] Checking sample: !base! >> "%logFile%"
+
+
+    :: Check if R2 exists
+    if exist "!r2path!" (
+        echo [%date% %time%] Starting STAR alignment for !base!... >> "%logFile%"
+
+
+        docker run --rm ^
+          -v "%fastqDir%:/fastq" ^
+          -v "%outputDir%:/output" ^
+          -v "%indexDir%:/index" ^
+          quay.io/biocontainers/star:<version--tag> ^
+          STAR --runThreadN 4 ^
+               --outFilterMismatchNmax 2 ^
+               --quantMode GeneCounts ^
+               --genomeDir /index ^
+               --readFilesIn /fastq/!r1! /fastq/!r2! ^
+               --outFileNamePrefix /output/!base!_ ^
+               --outSAMtype BAM SortedByCoordinate
+
+
+        if %errorlevel%==0 (
+            echo [%date% %time%] SUCCESS: STAR finished for !base! >> "%logFile%"
+        ) else (
+            echo [%date% %time%] ERROR: STAR failed for !base! >> "%logFile%"
+        )
+    ) else (
+        echo WARNING: Missing R2 file for !base! — skipping this sample.
+        echo [%date% %time%] WARNING: Missing R2 for !base! — skipped. >> "%logFile%"
+    )
+)
+
+
+:: ================================
+:: Move all BAM files to BAMfiles folder
+:: ================================
+echo.
+echo ========================================
+echo Moving BAM files to BAMfiles folder...
+echo ========================================
+move "%outputDir%\*.bam" "%bamDir%\" >nul 2>&1
+
+
+echo [%date% %time%] BAM files moved to %bamDir% >> "%logFile%"
+echo. >> "%logFile%"
+echo ======================================== >> "%logFile%"
+echo STAR alignment completed for all samples. >> "%logFile%"
+echo Log saved at: %logFile% >> "%logFile%"
+echo ======================================== >> "%logFile%"
+
+
+echo.
+echo ========================================
+echo All STAR alignments completed!
+echo BAM files consolidated into:
+echo   %bamDir%
+echo Log file created at:
+echo   %logFile%
+echo ========================================
+pause
 ```
+Refer to https://github.com/alexdobin/STAR/blob/master/doc/STARmanual.pdf for more details. 
+
+### FeatureCounts
+FeatureCounts 
 ## 4b. Salmon
 
 
