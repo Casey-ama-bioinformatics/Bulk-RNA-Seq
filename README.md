@@ -107,7 +107,7 @@ docker run --rm ^
 setlocal enabledelayedexpansion
 
 :: ================================
-:: Define directories
+:: Define Directories
 :: ================================
 set fastqDir=C:<path to fastq files>
 set outputDir=C:<path to output dir>
@@ -215,7 +215,49 @@ pause
 Refer to https://github.com/alexdobin/STAR/blob/master/doc/STARmanual.pdf for more details. 
 
 ### FeatureCounts
-FeatureCounts is a tool to quantify the number of reads aligned to genes. 
+FeatureCounts is a tool to quantify the number of reads aligned to genes using a genomic annotation. I pulled `subread 2.0.3` in `Docker` 
+
+```Windows
+@echo off
+setlocal enabledelayedexpansion
+
+:: === USER PATHS ===
+set BAM_DIR=C:<path to BAM files>
+set OUT_DIR=C:<path to output folder> 
+set ANNOTATION=C:<path to genomic annotation> #.gtf file
+
+
+:: === CREATE OUTPUT DIR IF NOT EXIST ===
+if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
+
+
+:: === PULL FEATURECOUNTS DOCKER IMAGE ===
+docker pull quay.io/biocontainers/subread:2.0.3--h7132678_1
+
+
+:: === BUILD LIST OF BAM FILES ===
+set BAM_LIST=
+for %%F in ("%BAM_DIR%\*.bam") do (
+    set "BAM_LIST=!BAM_LIST! /data/BAMfiles/%%~nxF"
+)
+
+
+:: === RUN FEATURECOUNTS ===
+docker run --rm ^
+    -v "%BAM_DIR%:/data/BAMfiles" ^
+    -v "%OUT_DIR%:/data/output" ^
+    -v "%ANNOTATION%:/data/annotation.gtf" ^
+    quay.io/biocontainers/subread:2.0.3--h7132678_1 ^
+    featureCounts -a /data/annotation.gtf ^
+                  -o /data/output/final_counts.txt ^
+                  -g gene_id -T 4 -M --fraction -p !BAM_LIST!
+
+
+echo.
+echo === FeatureCounts Completed ===
+echo Results saved in: %OUT_DIR%
+pause
+```
 ## 4b. Salmon
 
 
