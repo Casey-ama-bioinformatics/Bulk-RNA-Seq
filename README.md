@@ -215,7 +215,7 @@ pause
 Refer to https://github.com/alexdobin/STAR/blob/master/doc/STARmanual.pdf for more details. 
 
 ### FeatureCounts
-FeatureCounts is a tool to quantify the number of reads aligned to genes using a genomic annotation. I pulled `subread 2.0.3` in `Docker` 
+FeatureCounts is a tool to quantify the number of reads aligned to genes using a genomic annotation. I pulled `subread 2.0.3` in the `Docker` container for quantification.  
 
 ```Windows
 @echo off
@@ -232,7 +232,7 @@ if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
 
 
 :: === PULL FEATURECOUNTS DOCKER IMAGE ===
-docker pull quay.io/biocontainers/subread:2.0.3--h7132678_1
+docker pull quay.io/biocontainers/subread:<version-tag>
 
 
 :: === BUILD LIST OF BAM FILES ===
@@ -247,7 +247,7 @@ docker run --rm ^
     -v "%BAM_DIR%:/data/BAMfiles" ^
     -v "%OUT_DIR%:/data/output" ^
     -v "%ANNOTATION%:/data/annotation.gtf" ^
-    quay.io/biocontainers/subread:2.0.3--h7132678_1 ^
+    quay.io/biocontainers/subread:<version-tag> ^
     featureCounts -a /data/annotation.gtf ^
                   -o /data/output/final_counts.txt ^
                   -g gene_id -T 4 -M --fraction -p !BAM_LIST!
@@ -258,6 +258,8 @@ echo === FeatureCounts Completed ===
 echo Results saved in: %OUT_DIR%
 pause
 ```
+Refer to https://rnnh.github.io/bioinfo-notebook/docs/featureCounts.html for more details. 
+
 ## 4b. Salmon
 
 
