@@ -261,7 +261,34 @@ pause
 Refer to https://rnnh.github.io/bioinfo-notebook/docs/featureCounts.html for more details. 
 
 ## 4b. Salmon + Trimport
-`Salmon` is an alignment tool utilizing quasi-mapping to align and quantify raw sequencing reads on a transcript level. Compared to `STAR`, `Salmon` is less resource heavy. The `Salmon + Trimport` pipeline is an alternative of `STAR + FeatureCounts`. I found that this pipeline yielded better alignment results as `STAR` ignores pseudogenes and genes with paralogs (e.g. Hbb genes), which might obscure gene expression quantification. Similar to `STAR`, Salmon requires the generation of a `salmon_index` using a transcriptome reference I pulled the latest `Salmon` version in `Docker`
+`Salmon` is an alignment tool utilizing quasi-mapping to align and quantify raw sequencing reads on a transcript level. Compared to `STAR`, `Salmon` is less resource heavy. The `Salmon + Trimport` pipeline is an alternative of `STAR + FeatureCounts`. I found that this pipeline yielded better alignment results as `STAR` ignores pseudogenes and genes with paralogs (e.g. Hbb genes), which might obscure gene expression quantification. Similar to `STAR`, Salmon requires the generation of a `salmon_index` folder using a transcriptome reference (GRCm38.primary_assembly.genome.fa) and annotation (gencode.vM38.basic.annotation.gtf). I pulled Salmon version `gffread 0.12.7`  in `Docker`. 
+
+```Windows
+
+#pull latest Salmon version in Docker
+docker pull quay.io/biocontainers/gffread:<version-tag>
+
+#Setting path to working directory where the filtered.gtf file will be written
+docker run --rm -v "C:<path to working directory>:/ref" ubuntu bash -c "awk '$1 ~ /^chr[1-9XYM][0-9]*$/' /ref/<annotation.gtf > /ref/<filtered.gtf>"
+
+#running GFFREAD on the filtered gtf file
+docker run --rm -v "C:<path to working directory>:/ref" quay.io/biocontainers/gffread:<version-tag> gffread /ref/<filtered.gtf> -g /ref/<reference genome.fa> -w /ref/gencode.vM38.transcripts.fa
+
+
+#the star_index generation 
+docker run --rm -v "C:\Book50_10BulkRNAseq\Trimmed_fastq_Nextera:/ref" -v "C:\Book50_10BulkRNAseq\Salmon_index:/index" combinelab/salmon:latest salmon index -t /ref/gencode.vM38.transcripts.fa -i /index -k 31 -p 8
+
+
+#example alignment
+docker run --rm -v C:/Book50_10BulkRNAseq/Trimmed_fastq_Nextera:/ref -v C:/Book50_10BulkRNAseq/Salmon_index:/index combinelab/salmon:latest salmon quant ^
+  -i /index ^
+  -l A ^
+  -1 /ref/trimmed_fastqfiles/50_10_8A_Lean_Blood_S74_L003_R1_001_val_1.fq ^
+  -2 /ref/trimmed_fastqfiles/50_10_8A_Lean_Blood_S74_L003_R2_001_val_2.fq ^
+  -p 8 ^
+  -o /ref/quant_50_10_8A
+
+
 
 
 
