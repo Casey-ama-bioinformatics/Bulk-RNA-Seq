@@ -1,5 +1,5 @@
 # Bulk RNA Seq Workflow  
-Casey Ho  
+Casey K. Ho  
 ## Introduction
 This page documents the basic workflow for bulk RNA sequencing data analysis at Elicieri Lab, UC San Diego, School of Medicine. This is written in parallel with data processing for Book 50-10 Bulk RNA-Seq Data using Windows 11 Home with Hyper-V, `Docker Desktop`, and `RStudio`.
 ## Directory
@@ -261,33 +261,76 @@ pause
 Refer to https://rnnh.github.io/bioinfo-notebook/docs/featureCounts.html for more details. 
 
 ## 4b. Salmon + Trimport
-`Salmon` is an alignment tool utilizing quasi-mapping to align and quantify raw sequencing reads on a transcript level. Compared to `STAR`, `Salmon` is less resource heavy. The `Salmon + Trimport` pipeline is an alternative of `STAR + FeatureCounts`. I found that this pipeline yielded better alignment results as `STAR` ignores pseudogenes and genes with paralogs (e.g. Hbb genes), which might obscure gene expression quantification. Similar to `STAR`, Salmon requires the generation of a `salmon_index` folder using a transcriptome reference (GRCm38.primary_assembly.genome.fa) and annotation (gencode.vM38.basic.annotation.gtf). I pulled Salmon version `gffread 0.12.7`  in `Docker`. 
+`Salmon` is an alignment tool utilizing quasi-mapping to align and quantify raw sequencing reads on a transcript level. Compared to `STAR`, `Salmon` is less resource heavy. The `Salmon + Trimport` pipeline is an alternative of `STAR + FeatureCounts`. I found that this pipeline yielded better alignment results as `STAR` ignores pseudogenes and genes with paralogs (e.g. Hbb genes), which might obscure gene expression quantification. Similar to `STAR`, Salmon requires the generation of a `salmon_index` folder using a transcriptome reference (GRCm38.primary_assembly.genome.fa) and annotation (gencode.vM38.basic.annotation.gtf). I pulled Salmon version `gffread 0.12.7`  in `Docker`. While generating `salmon_index` with the provided genome and annotation, `gffread` creates a filtered.gtf file (gencode.vM38.filtered.gtf) which ensures chromosomes in the annotation file matches our fastq files. A transcripts.fa file (gencode.vM38.transcripts.fa) will also be created in the process which will be the key input for `Salmon` alignment. 
 
 ```Windows
 
-#pull latest Salmon version in Docker
+#Pull latest Salmon version in Docker
 docker pull quay.io/biocontainers/gffread:<version-tag>
 
 #Setting path to working directory where the filtered.gtf file will be written
 docker run --rm -v "C:<path to working directory>:/ref" ubuntu bash -c "awk '$1 ~ /^chr[1-9XYM][0-9]*$/' /ref/<annotation.gtf > /ref/<filtered.gtf>"
 
-#running GFFREAD on the filtered gtf file
-docker run --rm -v "C:<path to working directory>:/ref" quay.io/biocontainers/gffread:<version-tag> gffread /ref/<filtered.gtf> -g /ref/<reference genome.fa> -w /ref/gencode.vM38.transcripts.fa
+#running GFFREAD on the filtered gtf file & generating transcripts
+docker run --rm -v "C:<path to working directory>:/ref" quay.io/biocontainers/gffread:<version-tag> gffread /ref/<filtered.gtf> -g /ref/<reference genome.fa> -w /ref/<genome transcripts.fa>
 
+#the salmon_index generation
+# -k: k-mers (default 31 for mammalian transcriptome)
+docker run --rm -v "C:<path to working directory>:/ref" -v "C:<path to working directory>\Salmon_index:/index" combinelab/salmon:latest salmon index -t /ref/<genome transcripts.fa> -i /index -k 31 -p 8
 
-#the star_index generation 
-docker run --rm -v "C:\Book50_10BulkRNAseq\Trimmed_fastq_Nextera:/ref" -v "C:\Book50_10BulkRNAseq\Salmon_index:/index" combinelab/salmon:latest salmon index -t /ref/gencode.vM38.transcripts.fa -i /index -k 31 -p 8
-
-
-#example alignment
-docker run --rm -v C:/Book50_10BulkRNAseq/Trimmed_fastq_Nextera:/ref -v C:/Book50_10BulkRNAseq/Salmon_index:/index combinelab/salmon:latest salmon quant ^
+#Example paired alignment
+docker run --rm -v C:<path to fastq files>:/ref -v C:<path to Salmon_index>:/index combinelab/salmon:latest salmon quant ^
   -i /index ^
   -l A ^
-  -1 /ref/trimmed_fastqfiles/50_10_8A_Lean_Blood_S74_L003_R1_001_val_1.fq ^
-  -2 /ref/trimmed_fastqfiles/50_10_8A_Lean_Blood_S74_L003_R2_001_val_2.fq ^
+  -1 /ref/<path to example sample 1_read1.fq> ^
+  -2 /ref/<path to example sample 1_read2.fq> ^
   -p 8 ^
-  -o /ref/quant_50_10_8A
+  -o /ref/<output file>
+```
+After generating a `salmon_index` file, I ran paired-end alignment by looping through all samples. 
 
+```Windows
+@echo off
+
+# Set folders and directories
+set FASTQ_DIR=C:<path to fastq files>
+set SALMON_INDEX=C:<path to Salmon_index>
+set OUTPUT_DIR=C:<path to output directory>
+
+if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
+
+# Essential for changing variables in for loop
+setlocal enabledelayedexpansion
+
+# Loop through R1 files and find corresponding R2
+for %%F in ("%FASTQ_DIR%/*_R1_001_val_1.fq") do (
+    REM Get base filename without _R1_001_val_1.fq
+    set "BASENAME=%%~nF"
+    set "BASE=!BASENAME:_R1_001_val_1=!"
+
+
+    # set output file for sample run 
+    set "SAMPLE_OUT=/out/quant_!BASE!"
+
+
+    echo ==============================================
+    echo Processing sample !BASE!
+    echo R1: /ref/trimmed_fastqfiles/!BASE!_R1_001_val_1.fq
+    echo R2: /ref/trimmed_fastqfiles/!BASE!_R2_001_val_2.fq
+    echo Output: !SAMPLE_OUT!
+
+
+    # Run Salmon inside Docker
+    docker run --rm -v C:<path to fastq files>:/ref -v C:<path to Salmon_index>:/index -v %OUTPUT_DIR%:/out combinelab/salmon:latest salmon quant ^
+        -i /index ^
+        -l A ^
+        -1 /ref/<path to fastq files>/!BASE!_R1_001_val_1.fq ^
+        -2 /ref/<path to fastq files>/!BASE!_R2_001_val_2.fq ^
+        -p 8 ^
+        -o !SAMPLE_OUT!
+)
+```
+Please refer to https://salmon.readthedocs.io/en/latest/salmon.html for more documentation details. 
 
 
 
