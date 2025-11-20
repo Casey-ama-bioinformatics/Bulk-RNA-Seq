@@ -332,6 +332,7 @@ for %%F in ("%FASTQ_DIR%/*_R1_001_val_1.fq") do (
 ```
 Please refer to https://salmon.readthedocs.io/en/latest/salmon.html for more documentation details. 
 
+After running `Salmon` alignment, I used the `Trimport` package in R for transcript quantification. 
 
 
 
