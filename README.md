@@ -73,10 +73,7 @@ C:<working directory>:/data quay.io/biocontainers/trim-galore:<version--tag>
 
 ```
 Refer to https://github.com/FelixKrueger/TrimGalore/blob/master/Docs/Trim_Galore_User_Guide.md for more mode options. 
-### Output
-```Windows
 
-```
 I made sure that trimming of the adapters were complete by checking the 'FastQC' html reports before proceeding to sequence alignment. 
 
 ## 4a. STAR alignment + FeatureCounts
