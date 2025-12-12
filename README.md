@@ -2,7 +2,6 @@
 Casey K. Ho  
 ## Introduction
 This page documents the basic workflow for bulk RNA sequencing data analysis at Elicieri Lab, UC San Diego, School of Medicine. This is written in parallel with data processing for Book 50-10 Bulk RNA-Seq Data using Windows 11 Home with Hyper-V, `Docker Desktop`, and `RStudio`.
-## Directory
 
 ## 1. Fastq files 
 The fastq files are uncompressed using `7zip` and organized into `Fastqfiles` folder. 
