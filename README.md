@@ -1,7 +1,7 @@
 # Bulk RNA Seq Workflow  
 Casey K. Ho  
 ## Introduction
-This page documents the basic workflow for bulk RNA sequencing data analysis at Elicieri Lab, UC San Diego, School of Medicine. This is written in parallel with data processing for Book 50-10 Bulk RNA-Seq Data using Windows 11 Home with Hyper-V, `Docker Desktop`, and `RStudio`.
+This page documents the basic workflow for bulk RNA sequencing data analysis at Eliceiri Lab, UC San Diego, School of Medicine. This is written in parallel with data processing for Book 50-10 Bulk RNA-Seq Data using Windows 11 Home with Hyper-V, `Docker Desktop`, and `RStudio`. 
 
 ## 1. Fastq files 
 The fastq files are uncompressed using `7zip` and organized into `Fastqfiles` folder. 
@@ -328,7 +328,204 @@ for %%F in ("%FASTQ_DIR%/*_R1_001_val_1.fq") do (
 ```
 Please refer to https://salmon.readthedocs.io/en/latest/salmon.html for more documentation details. 
 
-After running `Salmon` alignment, I used the `Trimport` package in R for transcript quantification. 
+After running the `Salmon` alignment, there will be `quant.sf` files generated from the `Fastq` files in your directory. These files contain the transcript level expression of the samples and are ready for import into `R` for quantification using `Trimport` and data analysis using `DESeq2` package.
+
+## Transcript Quantification with Trimport
+We will first need to load the necessary libraries into the session. If they are not installed, install them using `install.packages()`. 
+```R
+library(tximport)
+library(rtracklayer)
+library(dplyr)
+library(stringr)
+library(tools)
+```
+
+Setting directories for the quant and sample files makes it easier to load the `quant.sf` files for downstream processing. A `gtf` annotation file is also required for `Trimport` which is the same as your annotation file (gencode.vM38.basic.annotation.gtf) that you used for Salmon alignment. The `gtf` annotation has the same function as a query for a database such that transcripts are annotated and quantified using `Trimport`. To ensure that all files are imported, check the objects with `head()` or `length()`. 
+
+```R
+#Setting directories
+quant_dir <- "<path to quant files>"
+gtf_file <- "<path to gtf annotation file>" 
+
+#Importing Quant files and sample names
+files <- list.files(quant_dir, pattern = "\\.sf$", full.names = TRUE)
+sample_names <- file_path_sans_ext(basename(files))
+names(files) <- sample_names
+length(files)
+
+#Importing gtf annotation
+gtf <- rtracklayer::import(gtf_file)
+gtf_df <- as.data.frame(gtf)
+
+#Extract `gene_name` from `gtf_df`
+if ("gene_name" %in% colnames(gtf_df)) {
+  message("Using 'gene_name' column from GTF.")
+  gtf_df$gene_name <- gtf_df$gene_name
+} else if ("Name" %in% colnames(gtf_df)) {
+  message("Using 'Name' column as gene_name.")
+  gtf_df$gene_name <- gtf_df$Name
+} else if ("attributes" %in% colnames(gtf_df)) {
+  message("Extracting gene_name from 'attributes' column...")
+  gtf_df$gene_name <- stringr::str_match(gtf_df$attributes, "gene_name \"([^\"]+)\"")[,2]
+} else {
+  stop("No suitable gene_name column found. Please inspect your GTF file.")
+}
+```
+The object `gene_map` will store the gene-level counts of the samples. Subsequently, it will  be used to create a metadata with the samples. 
+
+```R
+#Create clean `gene_map`to map gene ids to gene symbols for the gtf annotation
+gene_map <- gtf_df %>%
+  dplyr::filter(type == "gene") %>%
+  dplyr::select(gene_id, gene_name) %>%
+  dplyr::distinct() %>%
+  dplyr::mutate(
+    gene_id_clean = stringr::str_remove(gene_id, "\\.\\d+$"),
+    gene_symbol = gene_name
+  ) %>%
+  dplyr::select(gene_id_clean, gene_symbol)
+message("Gene map created with ", nrow(gene_map), " entries.")
+```
+
+The purpose of creating `tx2gene` is to map the transcript ids present in the `quant.sf` files to the `gene_map` object such that they are annotated by their gene names. In other words, this summarizes the raw counts to gene level. 
+```
+# Create tx2gene Mapping 
+transcripts <- gtf_df %>% filter(type == "transcript")
+tx2gene <- transcripts %>%
+  transmute(
+    transcript_id = str_remove(transcript_id, "\\.\\d+$"),
+    gene_id = str_remove(gene_id, "\\.\\d+$")
+  ) %>%
+  distinct()
+message("tx2gene table created with ", nrow(tx2gene), " transcript-to-gene mappings.")
+
+# Import Quant Files with `tximport`
+txi <- tximport(
+  files,
+  type = "salmon",
+  tx2gene = tx2gene,
+  ignoreTxVersion = TRUE
+)
+```
+The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA).
+
+```
+#Loading libraries
+library(tibble)
+library(dplyr)
+
+# Create sample table
+sample_table <- tibble(
+  sample = colnames(txi$counts),
+  condition = ifelse(grepl("HFD", sample), "HFD", "Lean"),
+  tissue = ifelse(grepl("Blood", sample), "Blood", "PVA")
+) %>%
+  column_to_rownames(var = "sample")  # rownames = sample names
+
+```
+When converting the conditions and tissue into factors, `DESeq2` uses the first level as the baseline/control (lean, PVA) as this package uses a pairwise comparison between the average expression of two groups. 
+```R
+# Convert to factors with levels
+sample_table$condition <- factor(sample_table$condition, levels = c("Lean", "HFD"))
+sample_table$tissue <- factor(sample_table$tissue, levels = c("PVA","Blood"))
+
+```
+The function `DESeqDataSetFromTximport` constructs the object `dds` that will be used for differential expression analysis. 
+```R
+library(DESeq2)
+library(dplyr)
+
+dds <- DESeqDataSetFromTximport(txi, colData = sample_table, design = ~ tissue + condition)
+
+```
+
+Prior to `DESeq2` analysis, genes with low counts across samples are filtered out. In this case, the minimum count of the gene is set to 10 (min_count=10)and the gene must be present in at least 4 samples(min_samples=4). I subsetted the tissues `Blood` and `PVA` from the object `dds` for differential expression analysis. Before running `DESeq2`, I had two subsetted objects `dds_blood` and `dds_pva`. 
+
+```R
+filter_low_counts <- function(dds, min_counts = 10, min_samples = 4) {
+  keep <- rowSums(counts(dds) >= min_counts) >= min_samples
+  dds_filtered <- dds[keep, ]
+  message("Retained ", sum(keep), " genes out of ", nrow(dds), " total genes.")
+  return(dds_filtered)
+}
+dds_filtered <- filter_low_counts(dds)
+
+
+# Subsetting for blood (Repeat with PVA)
+dds_blood <- dds[, dds$tissue == "Blood"]
+dds_blood$condition <- droplevels(dds_blood$condition)
+dds_blood$condition <- relevel(dds_blood$condition, ref = "Lean")
+dds_blood <- filter_low_counts(dds_blood, min_counts = 10, min_samples = 4)
+design(dds_blood) <- ~ condition
+```
+
+Surrogate Variable Analysis (SVA) is a normalization tool to correct batch variations. This increases the accuracy of the differential analysis and ensure that only biological variations are included. 
+```R
+#Normalization and batch correction for PVA samples (Repeat with dds_blood)
+library(sva)
+
+dds_pva <- dds[, dds$tissue == "PVA"]
+dds_pva$condition <- droplevels(dds_pva$condition)
+dds_pva$condition <- relevel(dds_pva$condition, ref="Lean")
+dds_pva <- filter_low_counts(dds_pva, min_counts=10, min_samples=4)
+dds_pva <- estimateSizeFactors(dds_pva)
+normCounts_pva <- counts(dds_pva, normalized=TRUE)
+mod <- model.matrix(~ condition, data=colData(dds_pva))
+mod0 <- model.matrix(~ 1, data=colData(dds_pva))
+svobj <- svaseq(normCounts_pva, mod, mod0)
+
+for(i in seq_len(ncol(svobj$sv))) {
+    colData(dds_pva)[[paste0("SV", i)]] <- svobj$sv[,i]
+}
+
+design(dds_pva) <- as.formula(paste("~", paste0("SV", 1:ncol(svobj$sv), collapse=" + "), "+ condition"))
+```
+The function `DESeq()` runs differential expression analysis on the objects. The results are extracted using the function `results()`.
+```
+#Run DESeq2 with normalization (Repeat with dds_blood)
+dds_pva <- DESeq(dds_pva)
+res_pva <- results(dds_pva, contrast=c("condition","HFD","Lean"))
+res_pva <- lfcShrink(dds_pva, coef="condition_HFD_vs_Lean", type="apeglm")
+head(counts(dds_pva, normalized=TRUE))
+
+# Annotate the DESeq2 results with gene_map
+annotate_res <- function(res) {
+  res %>%
+    mutate(gene_id_clean = str_remove(gene_id, "\\.\\d+$")) %>%
+    left_join(gene_map, by = "gene_id_clean") %>%
+    select(gene_id, gene_symbol, baseMean, log2FoldChange, padj)
+}
+
+res_blood_annotated <- annotate_res(res_blood)
+res_pva_annotated   <- annotate_res(res_pva)
+
+summary(res_blood_annotated) #summary() used to inspect the object.
+
+#Optionally, save the annotated files with function write.csv(). 
+
+## Extracting significant genes (padj < 0.05) 
+sig_blood <- res_blood_annotated %>%
+  filter(!is.na(padj) & padj < 0.05) %>%
+  arrange(padj)
+
+sig_pva <- res_pva_annotated %>%
+  filter(!is.na(padj) & padj < 0.05) %>%
+  arrange(padj)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
