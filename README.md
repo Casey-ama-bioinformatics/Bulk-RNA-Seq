@@ -407,6 +407,7 @@ txi <- tximport(
   ignoreTxVersion = TRUE
 )
 ```
+## DESeq2 Analysis
 The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA).
 
 ```
@@ -459,7 +460,7 @@ dds_blood <- filter_low_counts(dds_blood, min_counts = 10, min_samples = 4)
 design(dds_blood) <- ~ condition
 ```
 
-Surrogate Variable Analysis (SVA) is a normalization tool to correct batch variations. This increases the accuracy of the differential analysis and ensure that only biological variations are included. 
+Surrogate Variable Analysis (SVA) is a normalization tool to correct batch variations and uncaptured heterogeneity (hidden confounders). This increases the accuracy of the differential analysis and ensure that only biological variations are included. 
 ```R
 #Normalization and batch correction for PVA samples (Repeat with dds_blood)
 library(sva)
@@ -503,15 +504,33 @@ summary(res_blood_annotated) #summary() used to inspect the object.
 
 #Optionally, save the annotated files with function write.csv(). 
 
-## Extracting significant genes (padj < 0.05) 
-sig_blood <- res_blood_annotated %>%
-  filter(!is.na(padj) & padj < 0.05) %>%
-  arrange(padj)
+```
+## Data Visualization
+1. Heatmap of differentially expressed genes
+```R
+#Loading libraries
+library(pheatmap)
+library(DESeq2)
+library(dplyr)
+library(stringr)
 
-sig_pva <- res_pva_annotated %>%
-  filter(!is.na(padj) & padj < 0.05) %>%
-  arrange(padj)
+# rlog transformation
+rld_pva <- rlog(dds_pva, blind = TRUE)
+rlog_mat <- assay(rld_pva)
 
+# Map gene IDs to symbols
+gene_symbols <- gene_map$gene_symbol[match(rownames(rlog_mat), gene_map$gene_id_clean)]
+rownames(rlog_mat) <- ifelse(is.na(gene_symbols), rownames(rlog_mat), gene_symbols)
+
+top_var_genes <- head(order(matrixStats::rowVars(rlog_mat), decreasing = TRUE), 50)
+top_mat <- rlog_mat[top_var_genes, ]
+pdf("PVA_normalized_counts_heatmap_symbols.pdf", width = 8, height = 10)
+pheatmap(top_mat,
+         scale = "row",
+         annotation_col = as.data.frame(colData(dds_pva)[, "condition", drop = FALSE]),
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         main = "Top 50 Variable Genes - PVA Normalized Counts")
+dev.off()
 ```
 
 
