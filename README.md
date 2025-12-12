@@ -408,7 +408,7 @@ txi <- tximport(
 )
 ```
 ## DESeq2 Analysis
-The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA).
+The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA). `DESeq2` using the Benjamini-Hochberg (BH) model for false discovery rate (FDR) based on the mean read count of the gene. Only genes that pass the model will be assigned a p.adj value. 
 
 ```
 #Loading libraries
