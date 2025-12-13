@@ -506,7 +506,8 @@ summary(res_blood_annotated) #summary() used to inspect the object.
 
 ```
 ## Data Visualization
-1. Heatmap of differentially expressed genes
+1. Heatmap of differentially expressed genes based on normalized counts
+   I chose to visualize top 50 most variable genes for PVA samples. This was repeated with the blood samples. 
 ```R
 #Loading libraries
 library(pheatmap)
@@ -532,6 +533,299 @@ pheatmap(top_mat,
          main = "Top 50 Variable Genes - PVA Normalized Counts")
 dev.off()
 ```
+2. PCA plot of all samples
+
+```R
+# Loading libraries
+library(ggplot2)
+library(ggrepel)
+
+pca_data <- plotPCA(rld_pva, intgroup="condition", returnData=TRUE)
+
+pdf("PVA_normalized_counts_PCA_labeled.pdf", width=6, height=6)
+ggplot(pca_data, aes(PC1, PC2, color=condition, label=name)) +
+    geom_point(size=3) +
+    geom_text_repel(size=3, max.overlaps = Inf) +  # automatically adjust labels
+    theme_minimal() +
+    labs(title="PCA of PVA Samples (Rlog Normalized)")
+dev.off()
+```
+
+3. Sample correlation matrix with Variance Stabilizing Transformation (VST)
+
+```R
+# Loading libraries
+library(DESeq2)
+library(pheatmap)
+library(dplyr)
+
+dds_blood <- dds[, dds$tissue == "Blood"]
+dds_pva   <- dds[, dds$tissue == "PVA"]
+
+vsd_blood <- vst(dds_blood, blind=TRUE)
+vsd_pva   <- vst(dds_pva, blind=TRUE)
+vsd_mat_blood <- assay(vsd_blood)
+vsd_mat_pva   <- assay(vsd_pva)
+
+vsd_cor_blood <- cor(vsd_mat_blood)
+vsd_cor_pva   <- cor(vsd_mat_pva)
+
+# Create annotation for columns
+annotation_blood <- as.data.frame(colData(dds_blood)[, "condition", drop = FALSE])
+rownames(annotation_blood) <- colnames(vsd_mat_blood)
+
+#Repeat with PVA samples vsd_cor_pva
+pdf("Blood_correlation_heatmap.pdf", width = 6, height = 6)
+pheatmap(vsd_cor_blood,
+         annotation_col = annotation_blood,
+         show_rownames = FALSE,
+         show_colnames = TRUE,
+         fontsize_col = 8,
+         main = "Sample Correlation - Blood (HFD vs Lean)")
+dev.off()
+```
+4. MA plot
+```R
+#Loading libraries
+library(ggplot2)
+library(dplyr)
+library(ggrepel)
+
+plotMA_label_all <- function(df, tissue_name, alpha = 0.05) {
+  df <- df %>%
+    mutate(
+      significance = case_when(
+        is.na(padj) ~ "Not Tested",
+        padj < alpha ~ "Significant",
+        TRUE ~ "Not Significant"
+      )
+    )
+  
+  # Label all significant genes
+  sig_genes <- df %>% filter(padj < alpha & !is.na(gene_symbol))
+  
+  p <- ggplot(df, aes(x = log10(baseMean + 1), y = log2FoldChange, color = significance)) +
+    geom_point(alpha = 0.6, size = 1.5) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    scale_color_manual(values = c("Significant" = "red", "Not Significant" = "gray", "Not Tested" = "lightblue")) +
+    labs(
+      title = paste("MA Plot -", tissue_name),
+      x = "log10(Base Mean Expression)",
+      y = "Log2 Fold Change"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.title = element_blank(),
+      plot.title = element_text(size = 14, face = "bold")
+    ) +
+    geom_text_repel(
+      data = sig_genes,
+      aes(label = gene_symbol),
+      size = 3,
+      max.overlaps = Inf,   # allow all labels
+      box.padding = 0.5,
+      point.padding = 0.3,
+      segment.size = 0.3
+    )
+  
+  # Save as PDF
+  pdf_name <- paste0("MA_plot_", tissue_name, "_AllSigGenes.pdf")
+  ggsave(pdf_name, plot = p, width = 7, height = 7)
+  print(p)
+}
+
+
+plotMA_label_all(res_blood_annotated, "Blood")
+plotMA_label_all(res_pva_annotated, "PVA")
+```
+
+5. Volcano Plot
+Significance threshold: p.adj < 0.5 and log2FC > 1 
+```R
+#Loading libraries
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+
+#Repeat with Blood samples res_blood_annotated
+res_pva_df <- res_pva_annotated %>%
+  mutate(
+    Significant = ifelse(padj < 0.05 & abs(log2FoldChange) > 1, "Significant", "Not significant")
+  )
+
+pva_plot <- ggplot(res_pva_df, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(aes(color = Significant), alpha = 0.7, size = 2) +
+  scale_color_manual(values = c("Significant" = "red", "Not significant" = "gray")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  geom_text_repel(
+    data = subset(res_pva_df, padj < 0.05 & abs(log2FoldChange) > 1 & !is.na(gene_symbol)),
+    aes(label = gene_symbol),
+    size = 3,
+    max.overlaps = 50,
+    box.padding = 0.4,
+    point.padding = 0.3
+  ) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Volcano Plot - PVA Samples",
+    x = "Log2 Fold Change (HFD vs Lean)",
+    y = "-Log10 Adjusted P-value",
+    color = "Significance"
+  )
+
+ggsave("Volcano_PVA_Annotated.pdf", plot = pva_plot, width = 7, height = 6)
+```
+## GO Enrichment
+Following data visualization, I performed protein encrichment analysis for significant genes using `enrich_GO` with the library `org.Mm.eg.db`.
+1. GO enrichment for all gene ontologies
+```R 
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(dplyr)
+library(ggplot2)
+
+ego_BP <- enrichGO(
+  gene          = converted_blood$ENTREZID,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENTREZID",
+  ont           = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.1,
+  qvalueCutoff  = 0.2,
+  readable      = TRUE
+)
+
+ego_CC <- enrichGO(
+  gene          = converted_blood$ENTREZID,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENTREZID",
+  ont           = "CC",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.1,
+  qvalueCutoff  = 0.2,
+  readable      = TRUE
+)
+
+ego_MF <- enrichGO(
+  gene          = converted_blood$ENTREZID,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENTREZID",
+  ont           = "MF",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.1,
+  qvalueCutoff  = 0.2,
+  readable      = TRUE
+)
+
+ego_all <- bind_rows(
+  as.data.frame(ego_BP) %>% mutate(Ontology = "Biological Process"),
+  as.data.frame(ego_CC) %>% mutate(Ontology = "Cellular Component"),
+  as.data.frame(ego_MF) %>% mutate(Ontology = "Molecular Function")
+)
+
+
+if (nrow(ego_all) == 0) {
+  message("No significant GO terms found across BP/CC/MF.")
+} else {
+  ego_all <- ego_all %>%
+    mutate(
+      negLogP = -log10(p.adjust),
+      Description = factor(Description, levels = rev(unique(Description)))
+    )
+  
+  p <- ggplot(ego_all, aes(x = Count, y = Description, color = Ontology, size = negLogP)) +
+    geom_point(alpha = 0.8) +
+    scale_color_manual(values = c(
+      "Biological Process" = "#E64B35",
+      "Cellular Component" = "#4DBBD5",
+      "Molecular Function" = "#00A087"
+    )) +
+    labs(
+      title = "Combined GO Enrichment (Blood)",
+      x = "Gene Count",
+      y = "GO Term",
+      size = "-log10(Adj. P-value)",
+      color = "Ontology"
+    ) +
+    theme_bw(base_size = 12) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      axis.text.y = element_text(size = 9)
+    )
+  
+  pdf("GO_enrichment_blood_combined.pdf", width = 10, height = 8)
+  print(p)
+  dev.off()
+  
+} 
+```
+2. GO Enrichment comparing between Lean vs HFD conditions
+
+```R
+#Loading libraries
+library(clusterProfiler)
+library(org.Mm.eg.db)  # mouse annotation
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+sig_cutoff <- 0.05
+resOrdered <- res_blood_annotated 
+
+up_genes <- resOrdered %>%
+  filter(!is.na(padj) & padj < sig_cutoff & log2FoldChange > 0) %>%
+  pull(gene_id)
+
+down_genes <- resOrdered %>%
+  filter(!is.na(padj) & padj < sig_cutoff & log2FoldChange < 0) %>%
+  pull(gene_id)
+
+#Optionally, remove the ensembl ids 
+up_genes_clean <- gsub("\\..*", "", up_genes)
+down_genes_clean <- gsub("\\..*", "", down_genes)
+
+up_converted <- bitr(up_genes_clean,
+                     fromType = "ENSEMBL",
+                     toType = "ENTREZID",
+                     OrgDb = org.Mm.eg.db)
+down_converted <- bitr(down_genes_clean,
+                       fromType = "ENSEMBL",
+                       toType = "ENTREZID",
+                       OrgDb = org.Mm.eg.db)
+
+
+up_entrez <- unique(na.omit(up_converted$ENTREZID))
+down_entrez <- unique(na.omit(down_converted$ENTREZID))
+
+geneList_entrez <- list("HFD_Up" = up_entrez,
+                        "Lean_Up" = down_entrez)
+
+cc_entrez <- compareCluster(geneCluster = geneList_entrez,
+                            fun = "enrichGO",
+                            OrgDb = org.Mm.eg.db,
+                            keyType = "ENTREZID",
+                            ont = "BP",
+                            pAdjustMethod = "BH",
+                            pvalueCutoff = 0.05)
+
+
+pdf("GO_enrichment_Lean_vs_HFD_Blood.pdf", width = 10, height = 8)
+dotplot(cc_entrez, showCategory = 15) +
+  ggtitle("GO Enrichment: Lean vs HFD (Blood)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.y = element_text(size = 11))
+dev.off()
+```
+
+
+
+
+
+
+
+
 
 
 
