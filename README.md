@@ -330,7 +330,7 @@ Please refer to https://salmon.readthedocs.io/en/latest/salmon.html for more doc
 
 After running the `Salmon` alignment, there will be `quant.sf` files generated from the `Fastq` files in your directory. These files contain the transcript level expression of the samples and are ready for import into `R` for quantification using `Trimport` and data analysis using `DESeq2` package.
 
-## Transcript Quantification with Trimport
+### Transcript Quantification with Trimport
 We will first need to load the necessary libraries into the session. If they are not installed, install them using `install.packages()`. 
 ```R
 library(tximport)
@@ -407,7 +407,7 @@ txi <- tximport(
   ignoreTxVersion = TRUE
 )
 ```
-## DESeq2 Analysis
+## 5. DESeq2 Analysis
 The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA). `DESeq2` using the Benjamini-Hochberg (BH) model for false discovery rate (FDR) based on the mean read count of the gene. Only genes that pass the model will be assigned a p.adj value. 
 
 ```
@@ -505,7 +505,7 @@ summary(res_blood_annotated) #summary() used to inspect the object.
 #Optionally, save the annotated files with function write.csv(). 
 
 ```
-## Data Visualization
+## 6. Data Visualization
 1. Heatmap of differentially expressed genes based on normalized counts
    I chose to visualize top 50 most variable genes for PVA samples. This was repeated with the blood samples. 
 ```R
@@ -676,7 +676,7 @@ pva_plot <- ggplot(res_pva_df, aes(x = log2FoldChange, y = -log10(padj))) +
 
 ggsave("Volcano_PVA_Annotated.pdf", plot = pva_plot, width = 7, height = 6)
 ```
-## GO Enrichment
+## 7. GO Enrichment
 Following data visualization, I performed protein encrichment analysis for significant genes using `enrich_GO` with the library `org.Mm.eg.db`.
 1. GO enrichment for all gene ontologies
 ```R 
