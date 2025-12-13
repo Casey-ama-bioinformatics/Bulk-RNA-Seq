@@ -1,11 +1,15 @@
 # Package installation for data processing (Book 50-10)
 Ensure Docker Desktop is running prior to package installation. 
 
+## Sequencing
+Illumina Nextera Transposase Adapaters
+
 ## Quality Control tools: FastQC and MultiQC
 MultiQC version: ewels/multiqc
 
 ## Trimming tools: Trimgalore
 Docker Trimgalore version: 0.6.7--hdfd78af_0
+Trimming mode: Paired-end
 
 ## Alignment: STAR 
 Docker STAR version: 2.7.11b  
