@@ -459,8 +459,8 @@ dds_blood$condition <- relevel(dds_blood$condition, ref = "Lean")
 dds_blood <- filter_low_counts(dds_blood, min_counts = 10, min_samples = 4)
 design(dds_blood) <- ~ condition
 ```
-
-Surrogate Variable Analysis (SVA) is a normalization tool to correct batch variations and uncaptured heterogeneity (hidden confounders). This increases the accuracy of the differential analysis and ensure that only biological variations are included. 
+### Normalization Methods
+A. Surrogate Variable Analysis (SVA) is a normalization tool to correct batch variations and uncaptured heterogeneity (hidden confounders). This increases the accuracy of the differential analysis and ensure that only biological variations are included. 
 ```R
 #Normalization and batch correction for PVA samples (Repeat with dds_blood)
 library(sva)
@@ -481,6 +481,12 @@ for(i in seq_len(ncol(svobj$sv))) {
 
 design(dds_pva) <- as.formula(paste("~", paste0("SV", 1:ncol(svobj$sv), collapse=" + "), "+ condition"))
 ```
+B. Manual Batch Correction: Batch correction was applied manually as the samples were sequenced in two batches.
+```R
+
+
+```
+
 The function `DESeq()` runs differential expression analysis on the objects. The results are extracted using the function `results()`.
 ```
 #Run DESeq2 with normalization (Repeat with dds_blood)
