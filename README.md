@@ -408,7 +408,7 @@ txi <- tximport(
 )
 ```
 ## 5. DESeq2 Analysis
-The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA). `DESeq2` using the Benjamini-Hochberg (BH) model for false discovery rate (FDR) based on the mean read count of the gene. Only genes that pass the model will be assigned a p.adj value. 
+The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA). `DESeq2` using the Benjamini-Hochberg (BH) model for false discovery rate (FDR) based on the mean read count of the gene. Only genes that pass the model will be assigned a p.adj value. As the samples were sequenced in two batches, manual batch correction was used as a normalization method instead of SVA (Surrogate Variable Analysis). 
 
 ```
 #Loading libraries
@@ -459,7 +459,6 @@ dds_blood$condition <- relevel(dds_blood$condition, ref = "Lean")
 dds_blood <- filter_low_counts(dds_blood, min_counts = 10, min_samples = 4)
 design(dds_blood) <- ~ condition
 ```
-### Normalization Methods
 A. Surrogate Variable Analysis (SVA) is a normalization tool to correct batch variations and uncaptured heterogeneity (hidden confounders). This increases the accuracy of the differential analysis and ensure that only biological variations are included. 
 ```R
 #Normalization and batch correction for PVA samples (Repeat with dds_blood)
@@ -480,11 +479,6 @@ for(i in seq_len(ncol(svobj$sv))) {
 }
 
 design(dds_pva) <- as.formula(paste("~", paste0("SV", 1:ncol(svobj$sv), collapse=" + "), "+ condition"))
-```
-B. Manual Batch Correction: Batch correction was applied manually as the samples were sequenced in two batches.
-```R
-
-
 ```
 
 The function `DESeq()` runs differential expression analysis on the objects. The results are extracted using the function `results()`.
