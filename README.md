@@ -408,27 +408,37 @@ txi <- tximport(
 )
 ```
 ## 5. DESeq2 Analysis
-The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA). `DESeq2` using the Benjamini-Hochberg (BH) model for false discovery rate (FDR) based on the mean read count of the gene. Only genes that pass the model will be assigned a p.adj value. As the samples were sequenced in two batches, manual batch correction was used as a normalization method instead of SVA (Surrogate Variable Analysis). 
+The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA). `DESeq2` using the Benjamini-Hochberg (BH) model for false discovery rate (FDR) based on the mean read count of the gene. Only genes that pass the model will be assigned a p.adj value. As the samples were sequenced in two batches, manual batch correction was used as a normalization method instead of SVA (Surrogate Variable Analysis). A batch-aware sample table is created prior to DESeq2 analysis. 
 
 ```
 #Loading libraries
 library(tibble)
 library(dplyr)
+library(stringr)
 
-# Create sample table
+# Create batch-aware sample table 
 sample_table <- tibble(
   sample = colnames(txi$counts),
-  condition = ifelse(grepl("HFD", sample), "HFD", "Lean"),
-  tissue = ifelse(grepl("Blood", sample), "Blood", "PVA")
+  sample_id = str_extract(sample, "[0-9]+[AC]"),
+  condition = str_extract(sample, "(HFD|Lean)"),
+  tissue    = str_extract(sample, "(Blood|PVA)")
 ) %>%
-  column_to_rownames(var = "sample")  # rownames = sample names
+  mutate(
+    batch = ifelse(
+      sample_id %in% c("3A", "4A", "1C", "3C", "4C", "8C"), #change the sample ids for appropriate batches
+      "Batch1",
+      "Batch2"
+    )
+  ) %>%
+  column_to_rownames("sample")
 
 ```
 When converting the conditions and tissue into factors, `DESeq2` uses the first level as the baseline/control (lean, PVA) as this package uses a pairwise comparison between the average expression of two groups. 
 ```R
-# Convert to factors with levels
+# Convert to factors
 sample_table$condition <- factor(sample_table$condition, levels = c("Lean", "HFD"))
-sample_table$tissue <- factor(sample_table$tissue, levels = c("PVA","Blood"))
+sample_table$tissue    <- factor(sample_table$tissue, levels = c("PVA", "Blood"))
+sample_table$batch     <- factor(sample_table$batch)
 
 ```
 The function `DESeqDataSetFromTximport` constructs the object `dds` that will be used for differential expression analysis. 
