@@ -330,7 +330,7 @@ Please refer to https://salmon.readthedocs.io/en/latest/salmon.html for more doc
 
 After running the `Salmon` alignment, there will be `quant.sf` files generated from the `Fastq` files in your directory. These files contain the transcript level expression of the samples and are ready for import into `R` for quantification using `Trimport` and data analysis using `DESeq2` package.
 
-### Transcript Quantification with Trimport
+## 5. Transcript Quantification with Trimport
 We will first need to load the necessary libraries into the session. If they are not installed, install them using `install.packages()`. 
 ```R
 library(tximport)
@@ -407,7 +407,7 @@ txi <- tximport(
   ignoreTxVersion = TRUE
 )
 ```
-## 5. DESeq2 Analysis
+## 6. DESeq2 Analysis
 The preparation of the metadata `DESeq2 ColData` is important for `DESeq2` analysis as this affects how the counts are modeled across the samples, conditions, sex, tissues, and batches. In this analysis, there are two conditions (HFD, Lean) and two tissue types (Blood, PVA). `DESeq2` using the Benjamini-Hochberg (BH) model for false discovery rate (FDR) based on the mean read count of the gene. Only genes that pass the model will be assigned a p.adj value. As the samples were sequenced in two batches, manual batch correction was used as a normalization method instead of SVA (Surrogate Variable Analysis). A batch-aware sample table is created prior to DESeq2 analysis. 
 
 ```
@@ -433,7 +433,7 @@ sample_table <- tibble(
   column_to_rownames("sample")
 
 ```
-When converting the conditions and tissue into factors, `DESeq2` uses the first level as the baseline/control (lean, PVA) as this package uses a pairwise comparison between the average expression of two groups. 
+When converting the conditions and tissue into factors, `DESeq2` uses the first level as the baseline/control (lean, PVA) as this package uses a pairwise comparison between the average expression of two groups. I used `table()` to ensure that the levels are correct before proceeding. 
 ```R
 # Convert to factors
 sample_table$condition <- factor(sample_table$condition, levels = c("Lean", "HFD"))
@@ -441,35 +441,52 @@ sample_table$tissue    <- factor(sample_table$tissue, levels = c("PVA", "Blood")
 sample_table$batch     <- factor(sample_table$batch)
 
 ```
-The function `DESeqDataSetFromTximport` constructs the object `dds` that will be used for differential expression analysis. 
+The function `DESeqDataSetFromTximport` constructs the object `dds` that will be used for differential expression analysis. Ensure that the Ensembl IDs matches with the gene symbols as the IDs sometimes can contain versions. Check using `rownames()`.
+
 ```R
 library(DESeq2)
 library(dplyr)
 
 dds <- DESeqDataSetFromTximport(txi, colData = sample_table, design = ~ tissue + condition)
+gene_symbols <- gene_map$gene_symbol[match(rownames(dds), gene_map$gene_id_clean)]
+names(gene_symbols) <- rownames(dds)
 
 ```
-
-Prior to `DESeq2` analysis, genes with low counts across samples are filtered out. In this case, the minimum count of the gene is set to 10 (min_count=10)and the gene must be present in at least 4 samples(min_samples=4). I subsetted the tissues `Blood` and `PVA` from the object `dds` for differential expression analysis. Before running `DESeq2`, I had two subsetted objects `dds_blood` and `dds_pva`. 
+Prior to `DESeq2` analysis, genes with low counts across samples, mitochondrial (mt), hemoglobin (Hbb, Hba), predicted genes (Gm), and pseudogenes (Rik) are filtered out. In this case, the minimum count of the gene is set to 10 (min_count=10)and the gene must be present in at least 4 samples(min_samples=4). The `filtered_dds()` is subsequently applied to the whole dds object. I subsetted the tissues `Blood` and `PVA` from the object `dds` for differential expression analysis. Before running `DESeq2`, I had two subsetted objects `dds_blood` and `dds_pva`. 
 
 ```R
-filter_low_counts <- function(dds, min_counts = 10, min_samples = 4) {
-  keep <- rowSums(counts(dds) >= min_counts) >= min_samples
-  dds_filtered <- dds[keep, ]
-  message("Retained ", sum(keep), " genes out of ", nrow(dds), " total genes.")
+filter_dds <- function(dds_obj, min_counts = 10, min_samples = 4, gene_symbols_vec = gene_symbols) {
+
+  keep_counts <- rowSums(counts(dds_obj) >= min_counts) >= min_samples
+  exclude_pattern <- "^(mt-|Hbb|Rik|Gm)"
+  keep_genes <- !grepl(exclude_pattern, gene_symbols_vec[rownames(dds_obj)], ignore.case = TRUE)
+  keep <- keep_counts & keep_genes
+  
+  dds_filtered <- dds_obj[keep, ]
+  message("Filtered DESeq2 object: ", sum(keep), " genes retained out of ", nrow(dds_obj))
   return(dds_filtered)
 }
-dds_filtered <- filter_low_counts(dds)
 
+#Applying filter_dds() to the whole dds object
+dds_filtered <- filter_dds(dds)
 
-# Subsetting for blood (Repeat with PVA)
-dds_blood <- dds[, dds$tissue == "Blood"]
+#Subsetting dds object by tissue and running DESeq() 
+# Blood
+dds_blood <- dds_filtered[, dds_filtered$tissue == "Blood"]
 dds_blood$condition <- droplevels(dds_blood$condition)
-dds_blood$condition <- relevel(dds_blood$condition, ref = "Lean")
-dds_blood <- filter_low_counts(dds_blood, min_counts = 10, min_samples = 4)
-design(dds_blood) <- ~ condition
+dds_blood$batch     <- droplevels(dds_blood$batch)
+design(dds_blood) <- ~ batch + condition
+dds_blood <- DESeq(dds_blood)
+
+# PVA
+dds_pva <- dds_filtered[, dds_filtered$tissue == "PVA"]
+dds_pva$condition <- droplevels(dds_pva$condition)
+dds_pva$batch     <- droplevels(dds_pva$batch)
+design(dds_pva) <- ~ batch + condition
+dds_pva <- DESeq(dds_pva)
+
 ```
-A. Surrogate Variable Analysis (SVA) is a normalization tool to correct batch variations and uncaptured heterogeneity (hidden confounders). This increases the accuracy of the differential analysis and ensure that only biological variations are included. 
+(Optional) SVA is a normalization method in  differential analysis and ensure that only biological variations are included.  However, this is not used as batch correction is used. 
 ```R
 #Normalization and batch correction for PVA samples (Repeat with dds_blood)
 library(sva)
@@ -490,7 +507,15 @@ for(i in seq_len(ncol(svobj$sv))) {
 
 design(dds_pva) <- as.formula(paste("~", paste0("SV", 1:ncol(svobj$sv), collapse=" + "), "+ condition"))
 ```
+## 6. VST on filtered DESeq2 object
+VST (Variance Stabilizing Transformation) is essential as it stabilizes the variance across all expression levels. As raw counts are usually skewed towards low counts, VST removes the data's variance dependence on mean. See more details at https://carpentries-incubator.github.io/rna-seq-data-for-ml/instructor/episode6.html#:~:text=The%20variance%20stabilising%20transformation%20(vst)%20and%20rlog,dependence%20of%20the%20variance%20on%20the%20mean**
 
+```R
+vsd <- vst(dds_filtered, blind = FALSE)
+
+# Add sample IDs as a column for labeling
+colData(vsd)$sample_id <- rownames(colData(vsd))
+```
 The function `DESeq()` runs differential expression analysis on the objects. The results are extracted using the function `results()`.
 ```
 #Run DESeq2 with normalization (Repeat with dds_blood)
